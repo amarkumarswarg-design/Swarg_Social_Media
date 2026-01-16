@@ -2,7 +2,7 @@ from flask import Flask, request, redirect, render_template_string, session
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = "swarg_secret_key"
+app.secret_key = "swarg_free"
 DB = "swarg.db"
 
 # ---------- DATABASE ----------
@@ -15,7 +15,8 @@ with db() as c:
     c.execute("""
     CREATE TABLE IF NOT EXISTS users(
         username TEXT PRIMARY KEY,
-        password TEXT NOT NULL
+        password TEXT,
+        bio TEXT
     )
     """)
     c.execute("""
@@ -26,22 +27,23 @@ with db() as c:
     )
     """)
 
-# ---------- BASE TEMPLATE ----------
+# ---------- BASE ----------
 BASE = """
 <!DOCTYPE html>
 <html>
 <head>
 <title>Swarg</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{margin:0;font-family:Arial;background:#f0f2f5}
-header{background:#1877f2;color:white;padding:15px;text-align:center;font-size:24px}
-nav{background:white;padding:10px;text-align:center}
-nav a{margin:0 10px;color:#1877f2;text-decoration:none;font-weight:bold}
-.card{background:white;max-width:500px;margin:15px auto;padding:15px;border-radius:8px}
-label{font-weight:bold}
-input,textarea,button{width:100%;padding:10px;margin-top:8px}
-button{background:#1877f2;color:white;border:none;font-size:16px}
+header{background:#1877f2;color:white;padding:12px;text-align:center;font-size:22px}
+.card{background:white;margin:12px;padding:15px;border-radius:8px}
+input,textarea,button{width:100%;padding:10px;margin-top:8px;font-size:16px}
+button{background:#1877f2;color:white;border:none;border-radius:5px}
+nav{position:fixed;bottom:0;width:100%;background:#fff;border-top:1px solid #ccc;display:flex}
+nav a{flex:1;text-align:center;padding:10px;text-decoration:none;color:#1877f2;font-weight:bold}
 .error{color:red;text-align:center}
+.notice{color:#555;font-size:12px;text-align:center}
 </style>
 </head>
 <body>
@@ -54,122 +56,127 @@ button{background:#1877f2;color:white;border:none;font-size:16px}
 # ---------- LOGIN ----------
 @app.route("/", methods=["GET","POST"])
 def login():
-    error=""
+    msg=""
     if request.method=="POST":
-        u=request.form.get("username","").strip()
-        p=request.form.get("password","").strip()
-
+        u=request.form["username"]
+        p=request.form["password"]
         r=db().execute(
             "SELECT * FROM users WHERE username=? AND password=?",
             (u,p)
         ).fetchone()
-
         if r:
             session["user"]=u
             return redirect("/home")
-        else:
-            error="Wrong username or password"
-
-    html=f"""
+        msg="Account not found (Free server restart resets data)"
+    return render_template_string(BASE, content=f"""
     <div class="card">
     <h3>Login</h3>
     <form method="post">
-        <label>Username</label>
-        <input name="username" required>
-        <label>Password</label>
-        <input name="password" type="password" required>
-        <button>Login</button>
+    <input name="username" placeholder="Username" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button>Login</button>
     </form>
-    <div class="error">{error}</div>
-    <p style="text-align:center">
-        <a href="/register">Create account</a>
-    </p>
+    <div class="error">{msg}</div>
+    <p class="notice">Free server = data may reset</p>
+    <a href="/register">Create account</a>
     </div>
-    """
-    return render_template_string(BASE, content=html)
+    """)
 
 # ---------- REGISTER ----------
 @app.route("/register", methods=["GET","POST"])
 def register():
-    error=""
+    msg=""
     if request.method=="POST":
-        u=request.form.get("username","").strip()
-        p=request.form.get("password","").strip()
         try:
-            with db() as c:
-                c.execute(
-                    "INSERT INTO users(username,password) VALUES(?,?)",
-                    (u,p)
-                )
+            db().execute(
+                "INSERT INTO users VALUES(?,?,?)",
+                (request.form["username"], request.form["password"], "")
+            )
+            db().commit()
             return redirect("/")
         except:
-            error="Username already exists"
-
-    html=f"""
+            msg="Username exists"
+    return render_template_string(BASE, content=f"""
     <div class="card">
-    <h3>Create Account</h3>
+    <h3>Register</h3>
     <form method="post">
-        <label>Username</label>
-        <input name="username" required>
-        <label>Password</label>
-        <input name="password" type="password" required>
-        <button>Register</button>
+    <input name="username" placeholder="Username" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button>Create</button>
     </form>
-    <div class="error">{error}</div>
-    <p style="text-align:center">
-        <a href="/">Back to login</a>
-    </p>
+    <div class="error">{msg}</div>
     </div>
-    """
-    return render_template_string(BASE, content=html)
+    """)
 
-# ---------- HOME / FEED ----------
+# ---------- HOME ----------
 @app.route("/home", methods=["GET","POST"])
 def home():
     if "user" not in session:
         return redirect("/")
-
     user=session["user"]
 
     if request.method=="POST":
-        txt=request.form.get("post","").strip()
-        if txt:
-            with db() as c:
-                c.execute(
-                    "INSERT INTO posts(username,content) VALUES(?,?)",
-                    (user,txt)
-                )
+        db().execute(
+            "INSERT INTO posts(username,content) VALUES(?,?)",
+            (user, request.form["post"])
+        )
+        db().commit()
 
-    posts_html=""
-    rows=db().execute(
-        "SELECT * FROM posts ORDER BY id DESC"
-    ).fetchall()
+    posts=""
+    for p in db().execute("SELECT * FROM posts ORDER BY id DESC"):
+        posts+=f"<div class='card'><b>{p['username']}</b><br>{p['content']}</div>"
 
-    for r in rows:
-        posts_html+=f"""
-        <div class="card">
-            <b>{r['username']}</b><br>
-            {r['content']}
-        </div>
-        """
-
-    html=f"""
-    <nav>
-        <a href="/home">Home</a>
-        <a href="/logout">Logout</a>
-    </nav>
-
+    return render_template_string(BASE, content=f"""
     <div class="card">
-        <h3>Welcome {user} 🎉</h3>
-        <form method="post">
-            <textarea name="post" placeholder="What's on your mind?" required></textarea>
-            <button>Post</button>
-        </form>
+    <h3>Welcome {user}</h3>
+    <form method="post">
+    <textarea name="post" placeholder="What's on your mind?" required></textarea>
+    <button>Post</button>
+    </form>
     </div>
+    {posts}
+    <nav>
+    <a href="/home">Home</a>
+    <a href="/search">Search</a>
+    <a href="/profile">Profile</a>
+    <a href="/logout">Logout</a>
+    </nav>
+    """)
 
-    {posts_html}
-    """
-    return render_template_string(BASE, content=html)
+# ---------- SEARCH ----------
+@app.route("/search")
+def search():
+    return render_template_string(BASE, content="""
+    <div class="card">
+    <h3>Search</h3>
+    <p>Coming soon (free UI ready)</p>
+    </div>
+    """)
+
+# ---------- PROFILE ----------
+@app.route("/profile", methods=["GET","POST"])
+def profile():
+    if "user" not in session:
+        return redirect("/")
+    u=session["user"]
+    if request.method=="POST":
+        db().execute(
+            "UPDATE users SET bio=? WHERE username=?",
+            (request.form["bio"],u)
+        )
+        db().commit()
+    bio=db().execute(
+        "SELECT bio FROM users WHERE username=?", (u,)
+    ).fetchone()["bio"]
+    return render_template_string(BASE, content=f"""
+    <div class="card">
+    <h3>{u}</h3>
+    <form method="post">
+    <textarea name="bio" placeholder="About you">{bio}</textarea>
+    <button>Save</button>
+    </form>
+    </div>
+    """)
 
 # ---------- LOGOUT ----------
 @app.route("/logout")
@@ -177,5 +184,4 @@ def logout():
     session.clear()
     return redirect("/")
 
-# ---------- RUN ----------
 app.run(host="0.0.0.0", port=5000)
