@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, render_template_string
+from flask import Flask, request, redirect
 import os
 from werkzeug.utils import secure_filename
 
@@ -31,11 +31,14 @@ input{padding:6px;width:95%}
 </head>
 <body>
 <div class="header">SWARG</div>
-<div class="tabs">{{ tabs }}</div>
-{{ body }}
+<div class="tabs">__TABS__</div>
+__BODY__
 </body>
 </html>
 """
+
+def render_page(tabs, body):
+    return BASE.replace("__TABS__", tabs).replace("__BODY__", body)
 
 @app.route("/", methods=["GET","POST"])
 def login():
@@ -44,6 +47,7 @@ def login():
         p = request.form["password"]
         if u in users and users[u]["password"] == p:
             return redirect(f"/home/{u}")
+
     body = """
     <div class="card">
     <h3>Login</h3>
@@ -56,7 +60,7 @@ def login():
     <a href="/register">Create account</a>
     </div>
     """
-    return render_template_string(BASE, tabs="", body=body)
+    return render_page("", body)
 
 @app.route("/register", methods=["GET","POST"])
 def register():
@@ -68,25 +72,23 @@ def register():
                 "dp": "/static/default.png"
             }
             return redirect("/")
+
     body = """
     <div class="card">
     <h3>Register</h3>
     <form method="post">
     <input name="username" placeholder="Username"><br><br>
-    <input name="password" type="password" placeholder="Password"><br><br>
+    <input name="password" placeholder="Password"><br><br>
     <button>Register</button>
     </form>
     </div>
     """
-    return render_template_string(BASE, tabs="", body=body)
+    return render_page("", body)
 
 @app.route("/home/<u>", methods=["GET","POST"])
 def home(u):
     if request.method == "POST":
-        posts.append({
-            "user": u,
-            "text": request.form["text"]
-        })
+        posts.append({"user":u, "text":request.form["text"]})
 
     feed = ""
     for p in posts[::-1]:
@@ -107,8 +109,9 @@ def home(u):
     </div>
     {feed}
     """
+
     tabs = f'<a href="/profile/{u}">Profile</a> | <a href="/">Logout</a>'
-    return render_template_string(BASE, tabs=tabs, body=body)
+    return render_page(tabs, body)
 
 @app.route("/profile/<u>", methods=["GET","POST"])
 def profile(u):
@@ -129,7 +132,8 @@ def profile(u):
     </form>
     </div>
     """
+
     tabs = f'<a href="/home/{u}">Feed</a>'
-    return render_template_string(BASE, tabs=tabs, body=body)
+    return render_page(tabs, body)
 
 app.run(host="0.0.0.0", port=5000)
