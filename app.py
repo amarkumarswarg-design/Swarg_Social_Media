@@ -1,25 +1,24 @@
-from flask import Flask, request, redirect
-from flask import render_template_string
+from flask import Flask, request, redirect, render_template_string
 import sqlite3
 
 app = Flask(__name__)
 DB = "swarg.db"
 
 # ---------- DATABASE ----------
-def get_db():
+def db():
     con = sqlite3.connect(DB)
     con.row_factory = sqlite3.Row
     return con
 
-with get_db() as db:
-    db.execute("""
+with db() as c:
+    c.execute("""
     CREATE TABLE IF NOT EXISTS users(
         username TEXT PRIMARY KEY,
         password TEXT NOT NULL
     )
     """)
 
-# ---------- BASE TEMPLATE ----------
+# ---------- BASE ----------
 BASE = """
 <!DOCTYPE html>
 <html>
@@ -38,7 +37,7 @@ a{color:#1877f2;text-decoration:none}
 </head>
 <body>
 <header>SWARG</header>
-{{ content }}
+{{ content | safe }}
 </body>
 </html>
 """
@@ -54,8 +53,7 @@ def login():
         if not u or not p:
             error="Username and password required"
         else:
-            db=get_db()
-            r=db.execute(
+            r=db().execute(
                 "SELECT * FROM users WHERE username=? AND password=?",
                 (u,p)
             ).fetchone()
@@ -77,7 +75,7 @@ def login():
             <button>Login</button>
         </form>
         <div class="error">{error}</div>
-        <p style="text-align:center;margin-top:15px">
+        <p style="text-align:center">
             <a href="/register">Create new account</a>
         </p>
     </div>
@@ -96,8 +94,8 @@ def register():
             error="All fields required"
         else:
             try:
-                with get_db() as db:
-                    db.execute(
+                with db() as c:
+                    c.execute(
                         "INSERT INTO users(username,password) VALUES(?,?)",
                         (u,p)
                     )
@@ -118,7 +116,7 @@ def register():
             <button>Register</button>
         </form>
         <div class="error">{error}</div>
-        <p style="text-align:center;margin-top:15px">
+        <p style="text-align:center">
             <a href="/">Back to login</a>
         </p>
     </div>
