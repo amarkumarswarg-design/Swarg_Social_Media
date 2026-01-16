@@ -1,7 +1,8 @@
 from flask import Flask, request, redirect, render_template_string
-import os, sqlite3
-from datetime import datetime
 from werkzeug.utils import secure_filename
+from markupsafe import Markup
+import sqlite3, os
+from datetime import datetime
 
 app = Flask(__name__)
 DB = "swarg.db"
@@ -9,50 +10,42 @@ DB = "swarg.db"
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ---------------- DATABASE ----------------
+# ---------- DATABASE ----------
 def db():
     return sqlite3.connect(DB, check_same_thread=False)
 
-con = db()
-cur = con.cursor()
+c = db().cursor()
+c.execute("""CREATE TABLE IF NOT EXISTS users(
+    username TEXT PRIMARY KEY,
+    password TEXT,
+    dp TEXT,
+    bio TEXT,
+    school TEXT,
+    work TEXT,
+    city TEXT
+)""")
+c.execute("""CREATE TABLE IF NOT EXISTS posts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    text TEXT,
+    time TEXT
+)""")
+db().commit()
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS users(
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- username TEXT UNIQUE,
- password TEXT,
- dp TEXT,
- bio TEXT,
- school TEXT,
- work TEXT,
- city TEXT
-)
-""")
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS posts(
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- username TEXT,
- text TEXT,
- time TEXT
-)
-""")
-con.commit()
-
-# ---------------- BASE TEMPLATE ----------------
+# ---------- BASE ----------
 BASE = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Swarg</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swarg</title>
 <style>
 body{margin:0;font-family:Arial;background:#f0f2f5}
-.header{background:#1877f2;color:white;padding:14px;font-size:24px;text-align:center}
-.nav a{margin:10px;color:#1877f2;text-decoration:none;font-weight:bold}
+.header{background:#1877f2;color:white;padding:15px;text-align:center;font-size:24px}
+.nav a{margin:10px;color:#1877f2;font-weight:bold;text-decoration:none}
 .card{background:white;margin:15px;padding:15px;border-radius:12px}
 img{width:55px;height:55px;border-radius:50%}
-textarea,input{width:100%;padding:8px;margin:6px 0}
+input,textarea{width:100%;padding:8px;margin:6px 0}
 button{background:#1877f2;color:white;border:none;padding:8px 14px;border-radius:6px}
 .small{color:gray;font-size:12px}
 </style>
@@ -66,17 +59,21 @@ button{background:#1877f2;color:white;border:none;padding:8px 14px;border-radius
 """
 
 def page(nav, body):
-    return render_template_string(BASE, nav=nav, body=body)
+    return render_template_string(
+        BASE,
+        nav=Markup(nav),
+        body=Markup(body)
+    )
 
-# ---------------- AUTH ----------------
+# ---------- LOGIN ----------
 @app.route("/", methods=["GET","POST"])
 def login():
     if request.method=="POST":
         u=request.form["username"]
         p=request.form["password"]
-        c=db().cursor()
-        c.execute("SELECT * FROM users WHERE username=? AND password=?", (u,p))
-        if c.fetchone():
+        cur=db().cursor()
+        cur.execute("SELECT * FROM users WHERE username=? AND password=?", (u,p))
+        if cur.fetchone():
             return redirect(f"/feed/{u}")
 
     return page("", """
@@ -91,15 +88,15 @@ def login():
     </div>
     """)
 
+# ---------- REGISTER ----------
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method=="POST":
-        u=request.form["username"]
-        p=request.form["password"]
         try:
             db().cursor().execute(
-                "INSERT INTO users(username,password,dp,bio,school,work,city) VALUES(?,?,?,?,?,?,?)",
-                (u,p,"/static/default.png","","","","")
+                "INSERT INTO users VALUES(?,?,?,?,?,?,?)",
+                (request.form["username"], request.form["password"],
+                 "/static/default.png","","","","")
             )
             db().commit()
             return redirect("/")
@@ -117,25 +114,25 @@ def register():
     </div>
     """)
 
-# ---------------- FEED ----------------
+# ---------- FEED ----------
 @app.route("/feed/<u>", methods=["GET","POST"])
 def feed(u):
     if request.method=="POST":
         db().cursor().execute(
             "INSERT INTO posts(username,text,time) VALUES(?,?,?)",
-            (u, request.form["text"], datetime.now().strftime("%d %b %Y %H:%M"))
+            (u, request.form["text"], datetime.now().strftime("%d %b %H:%M"))
         )
         db().commit()
 
-    c=db().cursor()
-    c.execute("SELECT * FROM posts ORDER BY id DESC")
-    posts=c.fetchall()
+    cur=db().cursor()
+    cur.execute("SELECT * FROM posts ORDER BY id DESC")
+    posts=cur.fetchall()
 
-    feed_html=""
+    out=""
     for _,user,text,time in posts:
-        c.execute("SELECT dp FROM users WHERE username=?", (user,))
-        dp=c.fetchone()[0]
-        feed_html+=f"""
+        cur.execute("SELECT dp FROM users WHERE username=?", (user,))
+        dp=cur.fetchone()[0]
+        out+=f"""
         <div class="card">
         <img src="{dp}">
         <b>@{user}</b>
@@ -145,7 +142,6 @@ def feed(u):
         """
 
     nav=f'<a href="/feed/{u}">Feed</a><a href="/search/{u}">Search</a><a href="/profile/{u}">Profile</a><a href="/edit/{u}">Edit</a><a href="/">Logout</a>'
-
     return page(nav, f"""
     <div class="card">
     <form method="post">
@@ -153,16 +149,16 @@ def feed(u):
     <button>Post</button>
     </form>
     </div>
-    {feed_html}
+    {out}
     """)
 
-# ---------------- SEARCH ----------------
+# ---------- SEARCH ----------
 @app.route("/search/<u>")
 def search(u):
     q=request.args.get("q","")
-    c=db().cursor()
-    c.execute("SELECT username,dp FROM users WHERE username LIKE ?", (f"%{q}%",))
-    res=c.fetchall()
+    cur=db().cursor()
+    cur.execute("SELECT username,dp FROM users WHERE username LIKE ?", (f"%{q}%",))
+    res=cur.fetchall()
 
     out=""
     for user,dp in res:
@@ -179,35 +175,34 @@ def search(u):
     {out}
     """)
 
-# ---------------- PROFILE ----------------
+# ---------- PROFILE ----------
 @app.route("/profile/<u>")
 def profile(u):
-    c=db().cursor()
-    c.execute("SELECT * FROM users WHERE username=?", (u,))
-    user=c.fetchone()
+    cur=db().cursor()
+    cur.execute("SELECT * FROM users WHERE username=?", (u,))
+    user=cur.fetchone()
 
-    c.execute("SELECT * FROM posts WHERE username=? ORDER BY id DESC", (u,))
-    posts=c.fetchall()
+    cur.execute("SELECT * FROM posts WHERE username=? ORDER BY id DESC", (u,))
+    posts=cur.fetchall()
 
-    post_html=""
+    out=""
     for _,_,text,time in posts:
-        post_html+=f"<div class='card'><p>{text}</p><div class='small'>{time}</div></div>"
+        out+=f"<div class='card'><p>{text}</p><div class='small'>{time}</div></div>"
 
     nav=f'<a href="/feed/{u}">Feed</a><a href="/search/{u}">Search</a><a href="/profile/{u}">Profile</a><a href="/edit/{u}">Edit</a><a href="/">Logout</a>'
-
     return page(nav, f"""
     <div class="card">
-    <img src="{user[3]}">
+    <img src="{user[2]}">
     <h3>@{u}</h3>
-    <p>{user[4]}</p>
-    <p><b>School:</b> {user[5]}</p>
-    <p><b>Work:</b> {user[6]}</p>
-    <p><b>City:</b> {user[7]}</p>
+    <p>{user[3]}</p>
+    <p><b>School:</b> {user[4]}</p>
+    <p><b>Work:</b> {user[5]}</p>
+    <p><b>City:</b> {user[6]}</p>
     </div>
-    {post_html}
+    {out}
     """)
 
-# ---------------- EDIT PROFILE ----------------
+# ---------- EDIT PROFILE ----------
 @app.route("/edit/<u>", methods=["GET","POST"])
 def edit(u):
     if request.method=="POST":
@@ -218,24 +213,19 @@ def edit(u):
             f.save(path)
             db().cursor().execute("UPDATE users SET dp=? WHERE username=?", ("/"+path,u))
 
-        db().cursor().execute("""
-        UPDATE users SET bio=?,school=?,work=?,city=? WHERE username=?
-        """,(
-            request.form["bio"],
-            request.form["school"],
-            request.form["work"],
-            request.form["city"],
-            u
-        ))
+        db().cursor().execute(
+            "UPDATE users SET bio=?,school=?,work=?,city=? WHERE username=?",
+            (request.form["bio"],request.form["school"],
+             request.form["work"],request.form["city"],u)
+        )
         db().commit()
         return redirect(f"/profile/{u}")
 
     nav=f'<a href="/feed/{u}">Feed</a><a href="/search/{u}">Search</a><a href="/profile/{u}">Profile</a><a href="/edit/{u}">Edit</a><a href="/">Logout</a>'
-
     return page(nav, """
     <div class="card">
     <form method="post" enctype="multipart/form-data">
-    Change DP:<input type="file" name="dp"><br>
+    Change DP:<input type="file" name="dp">
     Bio:<textarea name="bio"></textarea>
     School:<input name="school">
     Work:<input name="work">
@@ -245,5 +235,4 @@ def edit(u):
     </div>
     """)
 
-# ---------------- RUN ----------------
 app.run(host="0.0.0.0", port=5000)
