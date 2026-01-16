@@ -1,12 +1,12 @@
 services:
   - type: web
-    name: swarg-social-media
+    name: swarg-social-media-1
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: SECRET_KEY
-        value: swarg_secret_123
+        value: swarg_super_secret_key_123
       - key: DATABASE_URL
         value: postgresql://swarg_db_user:cjA5DhgshF6HRD71oNgX78FW44BZ0JmB@dpg-d5l2mt8gjchc73bt06eg-a/swarg_db
